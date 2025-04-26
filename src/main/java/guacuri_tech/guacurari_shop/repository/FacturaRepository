@@ -1,0 +1,6 @@
+//package guacuri_tech.guacurari_shop.repository;
+//
+//import org.springframework.stereotype.Repository;
+//
+//@Repository
+//public interface FacturaRepository extends JpaRepository<Factura, Long> {}

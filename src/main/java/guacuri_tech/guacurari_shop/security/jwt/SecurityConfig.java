@@ -26,6 +26,8 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import javax.crypto.spec.SecretKeySpec;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.Base64;
 import java.util.List;
 
@@ -36,7 +38,7 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final CustomUserDetailsService userDetailsService;
 
-    @Value("${jwt.secret}")  // Inyecta la clave desde application.properties
+    @Value("${jwt.secret}")
     private String jwtSecret;
 
     @Bean
@@ -47,7 +49,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/auth/**", "/clientes/**", "/rubros/**", "/auth/validate-token", "/error", "/auth/logout").permitAll()
+                        .requestMatchers("/auth/**", "/productos/**","/clientes/**","/categorias/**","/rubros/**", "/auth/validate-token", "/error", "/auth/logout").permitAll()
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(exception -> exception
@@ -60,7 +62,7 @@ public class SecurityConfig {
                         .logoutUrl("/auth/logout")
                         .logoutSuccessHandler((request, response, authentication) -> response.setStatus(HttpStatus.OK.value()))
                         .invalidateHttpSession(true)
-                        .deleteCookies("JSESSIONID")
+                        .deleteCookies("SesionEnd")
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
@@ -86,7 +88,7 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+        return new BCryptPasswordEncoder(12);
     }
 
     @Bean
@@ -102,7 +104,7 @@ public class SecurityConfig {
 
     @Bean
     public JwtDecoder jwtDecoder() {
-        byte[] secretKeyBytes = Base64.getDecoder().decode(jwtSecret); // Decodifica la clave Base64
+        byte[] secretKeyBytes = Base64.getDecoder().decode(jwtSecret);
         return NimbusJwtDecoder.withSecretKey(new SecretKeySpec(secretKeyBytes, "HMACSHA256")).build();
     }
 
@@ -111,10 +113,21 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(List.of("http://localhost:4200"));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Cookie"));
         configuration.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
+    }
+
+    private String getTokenFromCookies(HttpServletRequest request) {
+        if (request.getCookies() != null) {
+            for (Cookie cookie : request.getCookies()) {
+                if ("auth_token".equals(cookie.getName())) {
+                    return cookie.getValue();
+                }
+            }
+        }
+        return null;
     }
 }

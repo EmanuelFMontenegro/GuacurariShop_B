@@ -1,6 +1,7 @@
 package guacuri_tech.guacurari_shop.security.jwt;
 
 import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.SignatureException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -17,9 +18,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.Arrays;
+
 @Slf4j
 @Component
-
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
@@ -42,18 +43,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
 
-        String token = extractToken(request);
+        String token = jwtService.extractToken(request);
 
         try {
             if (token == null) {
-                sendError(response, "Acceso no autorizado");
+                filterChain.doFilter(request, response);
                 return;
             }
 
             String username = jwtService.extractUsername(token);
             UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
-            // Validar el token y configurar el contexto de seguridad
             if (jwtService.isTokenValid(token)) {
                 UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                         userDetails,
@@ -67,8 +67,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
         } catch (ExpiredJwtException ex) {
-            clearInvalidCookie(response);  // Limpiar la cookie si el token ha expirado
-            sendError(response, "Sesión expirada");
+            log.warn("Token expirado: {}", ex.getMessage());
+            sendError(response, "Token expirado");
+            return;
+        } catch (SignatureException ex) {
+            log.error("Error de firma del token: {}", ex.getMessage());
+            sendError(response, "Token con firma inválida");
             return;
         } catch (Exception ex) {
             log.error("Error de autenticación: {}", ex.getMessage());
@@ -79,21 +83,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private String extractToken(HttpServletRequest request) {
-        String token = extractTokenFromCookie(request);
 
-        // Revisar en el header si no está en las cookies
-        if (token == null) {
-            String header = request.getHeader("Authorization");
-            if (header != null && header.startsWith("Bearer ")) {
-                token = header.substring(7);
-            }
-        }
 
-        return token;
-    }
 
-    private String extractTokenFromCookie(HttpServletRequest request) {
+    private String getTokenFromCookies(HttpServletRequest request) {
         if (request.getCookies() == null) return null;
 
         return Arrays.stream(request.getCookies())
@@ -107,19 +100,26 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String path = request.getServletPath();
         return path.startsWith("/auth/login")
                 || path.startsWith("/auth/register")
+                || path.startsWith("/rubros")
                 || path.startsWith("/public")
-                || path.equals("/error");  // Aseguramos que las rutas públicas no sean filtradas
+                || path.equals("/error");
+
     }
 
-    private void clearInvalidCookie(HttpServletResponse response) {
-        Cookie cookie = new Cookie("token", null);
-        cookie.setPath("/");
-        cookie.setHttpOnly(true);
-        cookie.setMaxAge(0);  // Eliminar la cookie
-        response.addCookie(cookie);
+
+    private boolean isProduction() {
+        return "prod".equalsIgnoreCase(System.getenv("ENV"));
     }
 
     private void sendError(HttpServletResponse response, String message) throws IOException {
-        response.sendError(HttpServletResponse.SC_UNAUTHORIZED, message);  // Enviar error 401
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setContentType("application/json");
+        String json = String.format(
+                "{\"error\": \"%s\", \"status\": 401, \"timestamp\": \"%s\"}",
+                message,
+                java.time.ZonedDateTime.now().toString()
+        );
+        response.getWriter().write(json);
     }
+
 }

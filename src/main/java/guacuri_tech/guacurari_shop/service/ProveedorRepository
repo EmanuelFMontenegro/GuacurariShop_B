@@ -1,0 +1,15 @@
+//package guacuri_tech.guacurari_shop.service;
+//
+//import guacuri_tech.guacurari_shop.entity.Proveedor;
+//
+//import java.util.List;
+//import java.util.Optional;
+//
+//public class ProveedorRepository {
+//    public List<Proveedor> findAll() {
+//    }
+//
+//    public Optional<Proveedor> findById(Long id) {
+//        return null;
+//    }
+//}

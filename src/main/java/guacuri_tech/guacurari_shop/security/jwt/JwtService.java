@@ -3,13 +3,17 @@ package guacuri_tech.guacurari_shop.security.jwt;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
+import guacuri_tech.guacurari_shop.util.JwtUtil;
 
 import java.security.Key;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -23,6 +27,8 @@ public class JwtService {
 
     @Value("${jwt.expiration}")
     private long jwtExpiration;
+
+    private final JwtUtil jwtUtil;
 
     private Key getSigningKey() {
         byte[] keyBytes = Decoders.BASE64.decode(secretKey);
@@ -38,16 +44,27 @@ public class JwtService {
         return claimsResolver.apply(claims);
     }
 
-    public String generateToken(UserDetails userDetails) {
-        return generateToken(userDetails, Map.of("roles", userDetails.getAuthorities().stream()
-                .map(Object::toString)
-                .toList()));
+    // Genera un token con el email y el rol
+    public String generateToken(String email, String role) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("roles", List.of(role)); // Asegura que "roles" sea una lista
+        return buildToken(claims, email);
     }
 
-    public String generateToken(UserDetails userDetails, Map<String, Object> extraClaims) {
+    // Genera un token a partir de UserDetails (para integración con Spring Security)
+    public String generateToken(UserDetails userDetails) {
+        String role = userDetails.getAuthorities().stream()
+                .findFirst()
+                .map(GrantedAuthority::getAuthority)
+                .orElse("USER"); // Rol por defecto
+        return generateToken(userDetails.getUsername(), role);
+    }
+
+    // Construye el token JWT con los claims y el subject (email)
+    private String buildToken(Map<String, Object> claims, String subject) {
         return Jwts.builder()
-                .setClaims(extraClaims)
-                .setSubject(userDetails.getUsername())
+                .setClaims(claims)
+                .setSubject(subject)
                 .setIssuedAt(new Date(System.currentTimeMillis()))
                 .setExpiration(new Date(System.currentTimeMillis() + jwtExpiration))
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)
@@ -78,13 +95,19 @@ public class JwtService {
                 .parseClaimsJws(token)
                 .getBody();
     }
+
+    public String extractToken(HttpServletRequest request) {
+        return jwtUtil.extractToken(request);
+
+    }
     public List<String> extractRoles(String token) {
         Claims claims = extractAllClaims(token);
         Object rolesClaim = claims.get("roles");
         if (rolesClaim instanceof List<?>) {
-            return ((List<?>) rolesClaim).stream().map(Object::toString).toList();
+            return ((List<?>) rolesClaim).stream()
+                    .map(Object::toString)
+                    .toList();
         }
         return List.of();
     }
-
 }

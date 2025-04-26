@@ -1,6 +1,5 @@
 package guacuri_tech.guacurari_shop.controller;
 
-import guacuri_tech.guacurari_shop.model.Cliente;
 import guacuri_tech.guacurari_shop.service.ClienteService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -8,9 +7,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
+import guacuri_tech.guacurari_shop.entity.Cliente;
 import jakarta.validation.Valid;
-import java.util.List;
+
 import java.util.Optional;
 import java.util.UUID;
 

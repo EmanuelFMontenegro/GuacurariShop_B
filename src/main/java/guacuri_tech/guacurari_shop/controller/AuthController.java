@@ -1,41 +1,32 @@
 package guacuri_tech.guacurari_shop.controller;
 
-import guacuri_tech.guacurari_shop.dto.ResetPasswordDTO;
-import guacuri_tech.guacurari_shop.dto.UsuarioRegisterDTO;
-import guacuri_tech.guacurari_shop.dto.UsuarioLoginDTO;
-import guacuri_tech.guacurari_shop.dto.RecoverPasswordDTO;
+import guacuri_tech.guacurari_shop.dto.request.RecoverPasswordDTO;
+import guacuri_tech.guacurari_shop.dto.request.ResetPasswordDTO;
+import guacuri_tech.guacurari_shop.dto.request.UsuarioLoginDTO;
+import guacuri_tech.guacurari_shop.dto.request.UsuarioRegisterDTO;
 import guacuri_tech.guacurari_shop.entity.UserEntity;
-import guacuri_tech.guacurari_shop.model.AuthResponse;
+import guacuri_tech.guacurari_shop.model.Role;
 import guacuri_tech.guacurari_shop.repository.UserRepository;
 import guacuri_tech.guacurari_shop.service.AuthService;
 import guacuri_tech.guacurari_shop.service.EmailService;
 import guacuri_tech.guacurari_shop.service.UserRegistrationService;
 import guacuri_tech.guacurari_shop.security.jwt.JwtService;
-import guacuri_tech.guacurari_shop.service.CustomUserDetailsService;
 import guacuri_tech.guacurari_shop.util.JwtUtil;
-import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
-import io.jsonwebtoken.Jwts;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.http.*;
 import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.crypto.bcrypt.BCrypt;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
-import java.util.List;
+import java.time.Duration;
 import java.util.Map;
 
 @RestController
@@ -49,73 +40,54 @@ public class AuthController {
     private final AuthService authService;
     private final UserRegistrationService userRegistrationService;
     private final JwtService jwtService;
-    private final CustomUserDetailsService userDetailsService;
-    private final AuthenticationManager authenticationManager;
     private final PasswordEncoder passwordEncoder;
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private EmailService emailService;
-
-    @Autowired
-    private JwtUtil jwtUtil;
+    private final UserRepository userRepository;
+    private final EmailService emailService;
+    private final JwtUtil jwtUtil;
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@RequestBody UsuarioLoginDTO loginDTO, HttpServletResponse response) {
+    public ResponseEntity<?> login(@Valid @RequestBody UsuarioLoginDTO loginDTO,
+                                   HttpServletResponse response) {
         try {
-            Authentication authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(loginDTO.getEmail(), loginDTO.getPassword())
-            );
+            Map<String, Object> result = authService.login(loginDTO.getEmail(), loginDTO.getPassword());
+            String token = (String) result.get("token");
 
-            UserDetails user = (UserDetails) authentication.getPrincipal();
-            String token = jwtService.generateToken(user);
+            ResponseCookie cookie = ResponseCookie.from("auth_token", token)
+                    .httpOnly(true)
+                    .secure(true) // Cambiar a true en producción
+                    .path("/")
+                    .maxAge(Duration.ofDays(1))
+                    .sameSite("Lax")
+                    .domain("tudominio.com") // Especificar dominio en producción
+                    .build();
 
-            Claims claims = Jwts.parser()
-                    .setSigningKey(secret)
-                    .parseClaimsJws(token)
-                    .getBody();
+            response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
 
 
-            Cookie cookie = new Cookie("token", token);
-            cookie.setHttpOnly(true);
-            cookie.setPath("/");
-            cookie.setMaxAge(24 * 60 * 60);
-            cookie.setSecure(false);
-            response.addCookie(cookie);
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                    .body(Map.of(
+                            "status", "success",
+                            "role", result.get("role"),
+                            "email", loginDTO.getEmail()
+                    ));
 
-            return ResponseEntity.ok(new AuthResponse(token, "24h", "Login exitoso", "success"));
         } catch (BadCredentialsException e) {
-            throw e;
+             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of(
+                            "status", "error",
+                            "code", "INVALID_CREDENTIALS",
+                            "message", "Combinación usuario/contraseña incorrecta"
+                    ));
+        } catch (UsernameNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of(
+                            "status", "error",
+                            "code", "USER_NOT_FOUND",
+                            "message", "Usuario no registrado"
+                    ));
         }
     }
-    @GetMapping("/validate-token")
-    public ResponseEntity<?> validateToken(HttpServletRequest request) {
-        String token = extractToken(request);
-        if (token == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token no proporcionado");
-        }
-        try {
-            if (!jwtService.isTokenValid(token)) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token inválido o expirado");
-            }
-
-            String email = jwtService.extractUsername(token);
-            List<String> roles = jwtService.extractRoles(token);
-
-            System.out.println("Roles del usuario: " + roles);
-
-            return ResponseEntity.ok(Map.of(
-                    "status", "success",
-                    "email", email,
-                    "roles", roles
-            ));
-        } catch (JwtException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token inválido");
-        }
-    }
-
 
     private String extractToken(HttpServletRequest request) {
         String header = request.getHeader("Authorization");
@@ -126,7 +98,7 @@ public class AuthController {
         Cookie[] cookies = request.getCookies();
         if (cookies != null) {
             for (Cookie cookie : cookies) {
-                if ("token".equals(cookie.getName())) {
+                if ("auth_token".equals(cookie.getName())) {
                     return cookie.getValue();
                 }
             }
@@ -134,35 +106,112 @@ public class AuthController {
         return null;
     }
 
-    @PostMapping("/register")
-    public ResponseEntity<String> registerUser(@RequestBody UsuarioRegisterDTO userDTO) {
+
+    @GetMapping("/me")
+    public ResponseEntity<?> getCurrentUser(HttpServletRequest request) {
         try {
-            if (userDTO.getEmail() == null || userDTO.getEmail().isEmpty()) {
-                return ResponseEntity.badRequest().body("El email es obligatorio.");
-            }
-            if (userDTO.getUsername() == null || userDTO.getUsername().isEmpty()) {
-                return ResponseEntity.badRequest().body("El nombre de usuario es obligatorio.");
-            }
-            if (userDTO.getPassword() == null || userDTO.getPassword().isEmpty()) {
-                return ResponseEntity.badRequest().body("La contraseña es obligatoria.");
+            // Verificar si existen usuarios en la base de datos
+            if (userRepository.count() == 0) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                        "status", "error",
+                        "message", "No hay usuarios registrados en el sistema"
+                ));
             }
 
-            userRegistrationService.registerNewUser(userDTO.getUsername(), userDTO.getEmail(), userDTO.getPassword(), userDTO.getRole());
+            // Extraer el token de la solicitud
+            String token = extractToken(request);
 
-            return ResponseEntity.ok("Usuario registrado exitosamente.");
+            // Si no hay token o es inválido
+            if (token == null || !jwtService.isTokenValid(token)) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
+                        "status", "error",
+                        "message", "Token inválido o no encontrado"
+                ));
+            }
+
+            // Si el token es válido, extraemos el email desde el JWT
+            String email = jwtService.extractUsername(token);
+
+            // Buscar al usuario en la base de datos
+            UserEntity user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado"));
+
+            // Si el usuario existe, devolvemos la respuesta
+            return ResponseEntity.ok(Map.of(
+                    "email", user.getEmail(),
+                    "role", user.getRole().name()
+            ));
+
+        } catch (UsernameNotFoundException e) {
+            // Si el usuario no existe, respondemos con un error 404
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "status", "error",
+                    "message", "Usuario no encontrado"
+            ));
+        } catch (Exception e) {
+            // Si ocurrió otro error (por ejemplo, al procesar el JWT), respondemos con un error 500
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                    "status", "error",
+                    "message", "Error al recuperar sesión"
+            ));
+        }
+    }
+
+
+
+    @PostMapping("/register")
+    public ResponseEntity<Object> registerUser(@RequestBody UsuarioRegisterDTO userDTO) {
+        try {
+
+            if (userDTO.getUsername() == null || userDTO.getUsername().isEmpty() ||
+                    userDTO.getEmail() == null || userDTO.getEmail().isEmpty() ||
+                    userDTO.getPassword() == null || userDTO.getPassword().isEmpty() ||
+                    userDTO.getRole() == null) {
+                return ResponseEntity.badRequest().body(new ResponseMessage("Todos los campos son obligatorios."));
+            }
+
+
+            userRegistrationService.registerNewUser(
+                    userDTO.getUsername(),
+                    userDTO.getEmail(),
+                    userDTO.getPassword(),
+                    userDTO.getRole()
+            );
+
+            return ResponseEntity.ok(new ResponseMessage("Usuario registrado exitosamente."));
+
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+
+            return ResponseEntity.badRequest().body(new ResponseMessage(e.getMessage()));
+        }
+    }
+
+
+
+    class ResponseMessage {
+        private String message;
+
+        public ResponseMessage(String message) {
+            this.message = message;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+
+        public void setMessage(String message) {
+            this.message = message;
         }
     }
 
 
     @PostMapping("/logout")
     public ResponseEntity<String> logout(HttpServletResponse response) {
-        Cookie cookie = new Cookie("token", "");
+        Cookie cookie = new Cookie("auth_token", "");
         cookie.setPath("/");
         cookie.setHttpOnly(true);
         cookie.setSecure(false);
-        cookie.setMaxAge(3600);
+        cookie.setMaxAge(0);
         response.addCookie(cookie);
         return ResponseEntity.ok("Logout exitoso");
     }

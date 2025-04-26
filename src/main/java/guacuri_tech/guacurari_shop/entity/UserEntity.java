@@ -5,11 +5,14 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import lombok.*;
+import org.hibernate.annotations.GenericGenerator;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
+
 import java.util.Collection;
 import java.util.Collections;
+import java.util.UUID;
 
 @Entity
 @Table(name = "usuarios")
@@ -17,11 +20,15 @@ import java.util.Collections;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@ToString(exclude = "cliente")
+@EqualsAndHashCode(exclude = "cliente")
 public class UserEntity implements UserDetails {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue(generator = "UUID")
+    @GenericGenerator(name = "UUID", strategy = "org.hibernate.id.UUIDGenerator")
+    @Column(name = "id", updatable = false, nullable = false, columnDefinition = "uuid")
+    private UUID id;
 
     @NotBlank
     @Column(nullable = false, unique = true)
@@ -40,8 +47,12 @@ public class UserEntity implements UserDetails {
     @Column(nullable = false)
     private Role role = Role.USER;
 
-    @Column(name = "recovery_token", length = 512, nullable = true)
+    @Column(name = "recovery_token", length = 512)
     private String recoveryToken;
+
+    @ManyToOne
+    @JoinColumn(name = "cliente_id")
+    private Cliente cliente;
 
     // Métodos de UserDetails
     @Override

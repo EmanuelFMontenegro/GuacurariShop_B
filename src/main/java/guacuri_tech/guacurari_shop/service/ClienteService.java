@@ -1,6 +1,6 @@
 package guacuri_tech.guacurari_shop.service;
 
-import guacuri_tech.guacurari_shop.model.Cliente;
+import guacuri_tech.guacurari_shop.entity.Cliente;
 import guacuri_tech.guacurari_shop.repository.ClienteRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;

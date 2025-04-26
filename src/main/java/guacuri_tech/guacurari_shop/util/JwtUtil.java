@@ -4,6 +4,8 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import io.jsonwebtoken.io.Decoders;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
@@ -54,5 +56,25 @@ public class JwtUtil {
                 .parseClaimsJws(token)
                 .getBody();
         return claims.get("role", String.class);
+    }
+    public String extractToken(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header != null && header.startsWith("Bearer ")) {
+            return header.substring(7);
+        }
+
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if ("auth_token".equals(cookie.getName())) {
+                    return cookie.getValue();
+                }
+            }
+        }
+        return null;
+    }
+
+    public String getEmailFromToken(String token) {
+        return getUsernameFromToken(token);
     }
 }

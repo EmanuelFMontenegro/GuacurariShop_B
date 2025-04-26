@@ -1,5 +1,5 @@
 package guacuri_tech.guacurari_shop.model;
-
+import guacuri_tech.guacurari_shop.entity.Cliente;
 import jakarta.persistence.*;
 import java.util.UUID;
 
@@ -9,7 +9,7 @@ public class Usuario {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    @Column(name = "usuario_id")
+    @Column(name = "id")
     private UUID usuarioId;
 
     @ManyToOne

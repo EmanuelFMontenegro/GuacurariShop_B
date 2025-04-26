@@ -1,11 +1,12 @@
 package guacuri_tech.guacurari_shop.service;
 
-import guacuri_tech.guacurari_shop.dto.RecoverPasswordDTO;
+import guacuri_tech.guacurari_shop.dto.request.RecoverPasswordDTO;
 import guacuri_tech.guacurari_shop.entity.UserEntity;
 import guacuri_tech.guacurari_shop.model.Register;
 import guacuri_tech.guacurari_shop.repository.UserRepository;
 import guacuri_tech.guacurari_shop.security.jwt.JwtService;
 import guacuri_tech.guacurari_shop.exception.EmailAlreadyExistsException;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 
 @Service
@@ -35,7 +37,7 @@ public class AuthService {
     @Autowired
     private EmailService emailService;
 
-    // Método de registro
+
     public void register(Register request) {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new EmailAlreadyExistsException("El email ya está registrado.");
@@ -48,46 +50,39 @@ public class AuthService {
         userRepository.save(user);
     }
 
-    // Método de login
     public Map<String, Object> login(String email, String password) {
-        // Autenticación del usuario
-        UserEntity userEntity = userRepository.findByEmail(email)
-                .orElseThrow(() -> new BadCredentialsException("Credenciales inválidas"));
+       Optional<UserEntity> optionalUser = userRepository.findByEmail(email);
+        if (optionalUser.isEmpty()) {
+            throw new UsernameNotFoundException("Usuario no encontrado");
+        }
+        UserEntity userEntity = optionalUser.get();
+        boolean match = passwordEncoder.matches(password, userEntity.getPassword());
 
-        if (!passwordEncoder.matches(password, userEntity.getPassword())) {
+        if (!match) {
             throw new BadCredentialsException("Credenciales inválidas");
         }
-
-        // Obtener el rol del usuario
         String role = userEntity.getRole().name();
+        String token = jwtService.generateToken(userEntity.getEmail(), role);
 
-        // Crear el mapa de claims adicionales
-        Map<String, Object> extraClaims = Map.of("role", role);
-
-        // Generar el token correctamente
-        String token = jwtService.generateToken(userEntity, extraClaims);
-
-        // Construir la respuesta
         Map<String, Object> response = new HashMap<>();
         response.put("token", token);
         response.put("role", role);
 
         return response;
     }
-
-
-    // Método para recuperar la contraseña
-    public void recoverPassword(RecoverPasswordDTO recoverPasswordDTO) {
+    public void recoverPassword(@Valid RecoverPasswordDTO recoverPasswordDTO) {
         String email = recoverPasswordDTO.getEmail();
 
         UserEntity user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("Email no registrado"));
 
-        // Claims adicionales para el token
+
         Map<String, Object> extraClaims = Map.of("exp", System.currentTimeMillis() + (15 * 60 * 1000));
 
-        // Generar el token correctamente
-        String recoveryToken = jwtService.generateToken(user, extraClaims);
+
+        String recoveryToken = jwtService.generateToken(user.getEmail(), user.getRole().name());
+
+
 
         user.setRecoveryToken(recoveryToken);
         userRepository.save(user);
