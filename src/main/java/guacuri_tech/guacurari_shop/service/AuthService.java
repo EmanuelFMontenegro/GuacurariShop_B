@@ -6,6 +6,8 @@ import guacuri_tech.guacurari_shop.model.Register;
 import guacuri_tech.guacurari_shop.repository.UserRepository;
 import guacuri_tech.guacurari_shop.security.jwt.JwtService;
 import guacuri_tech.guacurari_shop.exception.EmailAlreadyExistsException;
+import jakarta.servlet.http.Cookie;
+import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -13,11 +15,12 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import jakarta.persistence.PersistenceContext;
+import jakarta.servlet.http.HttpServletResponse;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
-
 
 @Service
 public class AuthService {
@@ -51,7 +54,7 @@ public class AuthService {
     }
 
     public Map<String, Object> login(String email, String password) {
-       Optional<UserEntity> optionalUser = userRepository.findByEmail(email);
+        Optional<UserEntity> optionalUser = userRepository.findByEmail(email);
         if (optionalUser.isEmpty()) {
             throw new UsernameNotFoundException("Usuario no encontrado");
         }
@@ -70,24 +73,33 @@ public class AuthService {
 
         return response;
     }
-    public void recoverPassword(@Valid RecoverPasswordDTO recoverPasswordDTO) {
+
+
+    public void recoverPassword(@Valid RecoverPasswordDTO recoverPasswordDTO, HttpServletResponse response) {
         String email = recoverPasswordDTO.getEmail();
 
+        // Buscar el usuario por email
         UserEntity user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("Email no registrado"));
 
-
-        Map<String, Object> extraClaims = Map.of("exp", System.currentTimeMillis() + (15 * 60 * 1000));
-
-
+        // 1. Generar token JWT para recuperación
         String recoveryToken = jwtService.generateToken(user.getEmail(), user.getRole().name());
-
-
-
+        System.out.println("Recovery Token: " + recoveryToken);
+        // 2. Guardar el token en el usuario (esto se hace en la base de datos)
         user.setRecoveryToken(recoveryToken);
+
         userRepository.save(user);
 
-        String recoveryLink = "http://localhost:4200/auth/resetear-contrasena?token=" + recoveryToken;
+        // 3. Configurar la cookie con el token de recuperación
+        Cookie cookie = new Cookie("recovery_token", recoveryToken);
+        cookie.setHttpOnly(false); // Es importante para que solo pueda ser accedido por el backend
+        cookie.setSecure(false);  // En desarrollo no es necesario usar Secure
+        cookie.setPath("/");      // El path puede ser ajustado según necesites
+        cookie.setMaxAge(15 * 60); // 15 minutos de vida útil
+        response.addCookie(cookie);
+
+        // 4. Enviar correo con el link de recuperación (sin el token en la URL)
+        String recoveryLink = "http://localhost:4200/auth/resetear-contrasena?id=" + user.getId();
 
         try {
             emailService.sendRecoveryEmail(user.getEmail(), user.getUsername(), recoveryLink);
@@ -95,4 +107,5 @@ public class AuthService {
             throw new RuntimeException("Error al enviar el correo: " + e.getMessage(), e);
         }
     }
+
 }

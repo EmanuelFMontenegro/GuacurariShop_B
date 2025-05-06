@@ -45,55 +45,48 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String token = jwtService.extractToken(request);
 
+        if (token == null) {
+            log.debug("No se encontró token en la solicitud.");
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         try {
-            if (token == null) {
-                filterChain.doFilter(request, response);
-                return;
-            }
-
             String username = jwtService.extractUsername(token);
-            UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
-            if (jwtService.isTokenValid(token)) {
-                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
-                        userDetails,
-                        null,
-                        userDetails.getAuthorities()
-                );
-                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authToken);
-            } else {
-                sendError(response, "Token inválido");
-                return;
+            if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+
+                if (jwtService.isTokenValid(token)) {
+                    UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                            userDetails,
+                            null,
+                            userDetails.getAuthorities()
+                    );
+                    authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authToken);
+                } else {
+                    log.warn("Token inválido para el usuario {}", username);
+                    sendError(response, "Token inválido");
+                    return;
+                }
             }
+
         } catch (ExpiredJwtException ex) {
             log.warn("Token expirado: {}", ex.getMessage());
             sendError(response, "Token expirado");
             return;
         } catch (SignatureException ex) {
-            log.error("Error de firma del token: {}", ex.getMessage());
+            log.error("Firma de token inválida: {}", ex.getMessage());
             sendError(response, "Token con firma inválida");
             return;
         } catch (Exception ex) {
-            log.error("Error de autenticación: {}", ex.getMessage());
+            log.error("Error general en la autenticación JWT: {}", ex.getMessage(), ex);
             sendError(response, "Error de autenticación");
             return;
         }
 
         filterChain.doFilter(request, response);
-    }
-
-
-
-
-    private String getTokenFromCookies(HttpServletRequest request) {
-        if (request.getCookies() == null) return null;
-
-        return Arrays.stream(request.getCookies())
-                .filter(cookie -> "token".equals(cookie.getName()))
-                .findFirst()
-                .map(Cookie::getValue)
-                .orElse(null);
     }
 
     private boolean isPublicEndpoint(HttpServletRequest request) {
@@ -103,12 +96,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 || path.startsWith("/rubros")
                 || path.startsWith("/public")
                 || path.equals("/error");
-
-    }
-
-
-    private boolean isProduction() {
-        return "prod".equalsIgnoreCase(System.getenv("ENV"));
     }
 
     private void sendError(HttpServletResponse response, String message) throws IOException {
@@ -121,5 +108,4 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         );
         response.getWriter().write(json);
     }
-
 }

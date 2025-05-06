@@ -12,10 +12,7 @@ import org.springframework.stereotype.Service;
 import guacuri_tech.guacurari_shop.util.JwtUtil;
 
 import java.security.Key;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Function;
 
 @Service
@@ -40,42 +37,39 @@ public class JwtService {
     }
 
     public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
-        final Claims claims = extractAllClaims(token);
+        Claims claims = extractAllClaims(token);
         return claimsResolver.apply(claims);
     }
 
-    // Genera un token con el email y el rol
     public String generateToken(String email, String role) {
         Map<String, Object> claims = new HashMap<>();
-        claims.put("roles", List.of(role)); // Asegura que "roles" sea una lista
+        claims.put("roles", List.of(role)); // asegura que siempre es una lista
         return buildToken(claims, email);
     }
 
-    // Genera un token a partir de UserDetails (para integración con Spring Security)
     public String generateToken(UserDetails userDetails) {
         String role = userDetails.getAuthorities().stream()
                 .findFirst()
                 .map(GrantedAuthority::getAuthority)
-                .orElse("USER"); // Rol por defecto
+                .orElse("USER"); // rol por defecto si no hay ninguno
         return generateToken(userDetails.getUsername(), role);
     }
 
-    // Construye el token JWT con los claims y el subject (email)
     private String buildToken(Map<String, Object> claims, String subject) {
+        long now = System.currentTimeMillis();
         return Jwts.builder()
                 .setClaims(claims)
                 .setSubject(subject)
-                .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + jwtExpiration))
+                .setIssuedAt(new Date(now))
+                .setExpiration(new Date(now + jwtExpiration))
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
 
     public boolean isTokenValid(String token) {
         try {
-            extractAllClaims(token);
             return !isTokenExpired(token);
-        } catch (JwtException e) {
+        } catch (JwtException | IllegalArgumentException e) {
             return false;
         }
     }
@@ -98,8 +92,8 @@ public class JwtService {
 
     public String extractToken(HttpServletRequest request) {
         return jwtUtil.extractToken(request);
-
     }
+
     public List<String> extractRoles(String token) {
         Claims claims = extractAllClaims(token);
         Object rolesClaim = claims.get("roles");
